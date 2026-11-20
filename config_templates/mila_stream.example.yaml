@@ -37,3 +37,22 @@ sim:
 
 log_dir: logs/mila_stream
 state_file: cache/mila_stream_state.json
+
+# Brain connector (python -m mila_stream.brain_proxy): OLLV talks to http://127.0.0.1:8089/v1
+# (openai_compatible_llm), the connector forwards to the first working upstream.
+# Which brain Mila uses is a separate decision; this is only the plug.
+brain:
+  port: 8089
+  log_file: logs/mila_brain.jsonl     # timing and token counts, never message text
+  cooldown_s: 60                      # a failed upstream is skipped this long
+  upstreams:
+    - name: glavni
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      model: gemini-3.5-flash-lite
+      key_env: GEMINI_API_KEY
+      reasoning_effort: [minimal, low, null]   # tried in this order until accepted
+      timeout_s: 20
+    # - name: pricuva
+    #   base_url: ...
+    #   model: ...
+    #   key_env: ...

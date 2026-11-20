@@ -29,6 +29,7 @@ class StreamConfig:
     log_dir: str = "logs/mila_stream"
     state_file: str = "cache/mila_stream_state.json"
     tick_s: float = 0.25
+    brain: dict = field(default_factory=dict)  # read by brain_proxy.py
 
 
 def _fill(cls, data: dict):
