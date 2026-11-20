@@ -86,6 +86,9 @@ class AgentFactory:
                 max_history_messages=basic_memory_settings.get(
                     "max_history_messages", 0
                 ),
+                compact_history_after_tokens=basic_memory_settings.get(
+                    "compact_history_after_tokens", 0
+                ),
             )
 
         elif conversation_agent_choice == "mem0_agent":

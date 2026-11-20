@@ -1,3 +1,4 @@
+import asyncio
 from typing import (
     AsyncIterator,
     List,
@@ -30,6 +31,15 @@ from ...mcpp.types import ToolCallObject
 from ...mcpp.tool_executor import ToolExecutor
 
 
+try:  # mila: summarising old parts of a long stream (src/mila_stream/compaction.py)
+    from src.mila_stream import compaction as _compaction
+except ImportError:  # pragma: no cover
+    try:
+        from mila_stream import compaction as _compaction
+    except ImportError:
+        _compaction = None
+
+
 class BasicMemoryAgent(AgentInterface):
     """Agent with basic chat memory and tool calling support."""
 
@@ -50,6 +60,7 @@ class BasicMemoryAgent(AgentInterface):
         tool_executor: Optional[ToolExecutor] = None,
         mcp_prompt_string: str = "",
         max_history_messages: int = 0,
+        compact_history_after_tokens: int = 0,
     ):
         """Initialize agent with LLM and configuration."""
         super().__init__()
@@ -58,6 +69,10 @@ class BasicMemoryAgent(AgentInterface):
         # The whole history is still kept; only what is sent is cut. Without a cap the
         # prompt grows for the whole stream, and with it latency and token cost.
         self._max_history_messages = max(0, int(max_history_messages or 0))
+        # mila: when the history sent to the LLM grows past this many (estimated)
+        # tokens, its oldest half is summarised once into a short note (0 = off).
+        self._compact_after_tokens = max(0, int(compact_history_after_tokens or 0))
+        self._compaction_task: Optional[asyncio.Task] = None
         self._live2d_model = live2d_model
         self._tts_preprocessor_config = tts_preprocessor_config
         self._faster_first_response = faster_first_response
@@ -254,8 +269,59 @@ class BasicMemoryAgent(AgentInterface):
                 messages = messages[1:]
         return messages
 
+    def _maybe_compact_history(self) -> None:
+        """Start summarising the oldest half of the history in the background if it is
+        too long. The current turn still sends the full history; the next one is shorter."""
+        if (
+            not self._compact_after_tokens
+            or _compaction is None
+            or self._compaction_task is not None
+            or _compaction.estimate_tokens(self._memory) < self._compact_after_tokens
+        ):
+            return
+        try:
+            self._compaction_task = asyncio.get_running_loop().create_task(
+                self._compact_history()
+            )
+        except RuntimeError:  # no running loop
+            self._compaction_task = None
+
+    async def _compact_history(self) -> None:
+        try:
+            snapshot = list(self._memory)
+            k = _compaction.pick_cut(snapshot)
+            if not k:
+                return
+            chunk = snapshot[:k]
+            parts = []
+            async for token in self._llm.chat_completion(
+                _compaction.summary_request(chunk),
+                "Ti sažimaš zapisnik streama. Odgovaraš samo sažetkom.",
+            ):
+                if isinstance(token, str):
+                    parts.append(token)
+            summary = "".join(parts).strip()
+            if not summary:
+                logger.warning("History compaction: empty summary, history kept")
+                return
+            head = self._memory[:k]
+            if len(head) == k and all(a is b for a, b in zip(head, chunk)):
+                before = _compaction.estimate_tokens(self._memory)
+                self._memory[:k] = [_compaction.summary_message(summary)]
+                logger.info(
+                    f"History compaction: {k} messages -> 1 summary, "
+                    f"~{before} -> ~{_compaction.estimate_tokens(self._memory)} tokens"
+                )
+            else:
+                logger.warning("History compaction skipped: history changed meanwhile")
+        except Exception as e:
+            logger.warning(f"History compaction failed, history kept: {e}")
+        finally:
+            self._compaction_task = None
+
     def _to_messages(self, input_data: BatchInput) -> List[Dict[str, Any]]:
         """Prepare messages for LLM API call."""
+        self._maybe_compact_history()
         messages = self._history_window()
         user_content = []
         text_prompt = self._to_text_prompt(input_data)

@@ -64,6 +64,8 @@ character_config:
         faster_first_response: True
         # 每轮发送给大语言模型的历史消息数量（0 = 全部）。长时间直播建议设为 20 左右。
         max_history_messages: 0
+        # 历史消息超过该 token 数时总结较早的一半（0 = 关闭），例如 60000。
+        compact_history_after_tokens: 0
         # 句子分割方法：'regex' 或 'pysbd'
         segment_method: 'pysbd'
         # 是否使用 MCP（Model Context Protocol） Plus 以使 LLM 获得使用工具的能力（默认：False）

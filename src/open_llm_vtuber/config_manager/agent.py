@@ -34,6 +34,9 @@ class BasicMemoryAgentConfig(I18nMixin, BaseModel):
     use_mcpp: Optional[bool] = Field(False, alias="use_mcpp")
     mcp_enabled_servers: Optional[List[str]] = Field([], alias="mcp_enabled_servers")
     max_history_messages: Optional[int] = Field(0, alias="max_history_messages")
+    compact_history_after_tokens: Optional[int] = Field(
+        0, alias="compact_history_after_tokens"
+    )
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "llm_provider": Description(
@@ -51,6 +54,10 @@ class BasicMemoryAgentConfig(I18nMixin, BaseModel):
         "max_history_messages": Description(
             en="How many past messages are sent to the LLM each turn; 0 sends all (default: 0)",
             zh="每轮发送给大语言模型的历史消息数量；0 表示全部发送（默认：0）",
+        ),
+        "compact_history_after_tokens": Description(
+            en="Summarise the oldest half of the history once it exceeds this many estimated tokens; 0 = off (default: 0)",
+            zh="当历史消息估计超过该 token 数时，将较早的一半总结为一条摘要；0 表示关闭（默认：0）",
         ),
         "use_mcpp": Description(
             en="Whether to use MCP (Model Context Protocol) for the agent (default: True)",

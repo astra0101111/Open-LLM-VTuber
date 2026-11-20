@@ -65,6 +65,9 @@ character_config:
         # How many past messages go to the LLM each turn (0 = all). For a long stream
         # set e.g. 20: the prompt then stops growing, so latency and cost stay flat.
         max_history_messages: 0
+        # Summarise the oldest half of the history once it passes this many tokens
+        # (0 = off). Keeps long streams coherent and cheap; e.g. 60000.
+        compact_history_after_tokens: 0
         # Method for segmenting sentences: 'regex' or 'pysbd'
         segment_method: 'pysbd'
         # Use MCP (Model Context Protocol) Plus to let the LLM have the ability to use tools
