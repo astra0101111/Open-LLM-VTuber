@@ -47,6 +47,35 @@ AITuber OnAir comment-intelligence). When an ordinary message is answered, the r
 the ordinary chat is summarised in the same prompt and not answered one by one.
 At most `max_per_minute` answers a minute; gifts are never rate-limited.
 
+## Supervisor, recovery, AI label (plan v0.2, parts 4 and 5)
+
+```
+uv run python scripts/run_mila_supervisor.py --config mila_stream.yaml
+```
+
+- Starts `mozak` (brain_proxy), `olv` (run_server.py) and `chat` (this layer) from the
+  `supervisor` section, restarts a part that exits or fails its check twice in a row,
+  with growing pauses; after 5 restarts in 10 minutes it gives up on that part.
+- Checks look at real work, not at a process existing: OLLV answers and has a page
+  connected and no answer is stuck; brain_proxy `/health` (passive, costs nothing);
+  the stream layer's status file is fresh.
+- `http://127.0.0.1:8090/` status page for the operator; `/overlay` for OBS
+  (Browser Source 1920x1080): the AI label is always on; a banner appears while a
+  critical part is down, with an optional recorded sentence (`difficulty_sound`).
+- When every brain fails, brain_proxy answers with `brain.fallback_reply`, so Mila
+  says it in her own voice instead of going silent.
+- Paid events (Super Chat, members, gifts) that Mila did not finish answering are
+  written to `logs/mila_dead_letters.jsonl` with the reason (expired, deleted, ban,
+  interrupted, stream end, crash). A hard kill loses nothing: the open ones are kept
+  in `cache/mila_paid_open.json` and listed on the next start.
+- `--crash-test`: kills each part once (only the supervisor's own processes) and
+  writes the recovery time of each to `logs/supervisor/crash-test-*.json`.
+- `config_templates/mila_pravila_lika.hr.txt`: rules to append to the character
+  prompt (truthful about being AI, quoted viewer text is never an instruction,
+  personal data, sensitive topics) and the stream description text.
+- `scripts/mila/test_ai_iskrenost.py`: asks "are you real?" ten ways through the brain
+  and writes a report; the plan's bar is 10 of 10 truthful.
+
 ## Tests
 
 ```

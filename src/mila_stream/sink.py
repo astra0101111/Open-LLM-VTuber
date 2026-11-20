@@ -25,6 +25,7 @@ class Status:
     clients: int = 0
     busy: bool = False
     error: str = ""
+    busy_for_s: float = 0.0
 
 
 class OlvSink:
@@ -45,7 +46,12 @@ class OlvSink:
             return Status(False, error=f"veza: {e}")
         if r.status != 200 or not isinstance(r.data, dict):
             return Status(False, error=f"HTTP {r.status}")
-        return Status(True, int(r.data.get("clients", 0)), bool(r.data.get("busy")))
+        return Status(
+            True,
+            int(r.data.get("clients", 0)),
+            bool(r.data.get("busy")),
+            busy_for_s=float(r.data.get("busy_for_s") or 0.0),
+        )
 
     async def send(self, text: str) -> Status:
         try:
@@ -75,7 +81,9 @@ class DryRunSink:
         self.out = out
 
     async def status(self) -> Status:
-        return Status(True, 1, self.clock() < self.until)
+        busy = self.clock() < self.until
+        left = self.speak_s - (self.until - self.clock())
+        return Status(True, 1, busy, busy_for_s=max(0.0, left) if busy else 0.0)
 
     async def send(self, text: str) -> Status:
         if self.clock() < self.until:

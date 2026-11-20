@@ -6,6 +6,12 @@ not in code; which brain Mila gets is decided separately.
   upstream in the list answers; the first one is retried after `cooldown_s`
 - reasoning effort per upstream: tried in order (e.g. minimal, low, none) until the
   upstream accepts one; remembered
+- spoken fallback (part 4): when every upstream fails and `fallback_reply` is set,
+  the connector answers with that line itself (e.g. "Ups, malo zapinjem, odmah se
+  vraćam."), so Mila says something in character instead of going silent
+- GET /health: requests, failures in a row, when the last answer succeeded, which
+  upstreams are cooling down; read by the supervisor. It is passive: it spends
+  nothing and says nothing about an upstream that has not been asked yet.
 - measurement (part 13): one JSON line per request with time to first token, total
   time, characters, and token usage including cached prompt tokens when the upstream
   reports them. Message content is never logged; API keys are read from environment
@@ -61,6 +67,7 @@ class BrainConfig:
     port: int = 8089
     log_file: str = "logs/mila_brain.jsonl"
     cooldown_s: float = 60.0
+    fallback_reply: str = ""
     upstreams: list = field(default_factory=list)
 
 
@@ -104,6 +111,45 @@ class Brain:
         self.opener = opener
         self.clock = clock
         self.lock = threading.Lock()
+        self.requests = 0
+        self.failures_in_row = 0
+        self.fallback_replies = 0
+        self.last_ok_t: float | None = None
+        self.last_error_t: float | None = None
+        self.last_error = ""
+
+    def record(self, ok: bool, error: str = "") -> None:
+        with self.lock:
+            self.requests += 1
+            if ok:
+                self.failures_in_row = 0
+                self.last_ok_t = self.clock()
+            else:
+                self.failures_in_row += 1
+                self.last_error_t = self.clock()
+                self.last_error = error[:200]
+
+    def health(self) -> dict:
+        now = self.clock()
+        return {
+            "ok": self.failures_in_row < 3,
+            "requests": self.requests,
+            "failures_in_row": self.failures_in_row,
+            "fallback_replies": self.fallback_replies,
+            "last_ok_age_s": round(now - self.last_ok_t, 1) if self.last_ok_t else None,
+            "last_error_age_s": round(now - self.last_error_t, 1)
+            if self.last_error_t
+            else None,
+            "last_error": self.last_error,
+            "upstreams": [
+                {
+                    "name": u.name,
+                    "model": u.model,
+                    "cooling_s": round(max(0.0, u.down_until - now), 1),
+                }
+                for u in self.cfg.upstreams
+            ],
+        }
 
     def open(self, request: dict):
         """Returns (response, upstream, effort). Raises the last error if all fail."""
@@ -166,7 +212,11 @@ def make_handler(brain: Brain, log_path: Path | None):
             self.end_headers()
             self.wfile.write(data)
 
-        def do_GET(self):  # /v1/models
+        def do_GET(self):
+            if self.path.rstrip("/") == "/health":
+                self._json(200, brain.health())
+                return
+            # /v1/models
             models = [{"id": u.model, "object": "model"} for u in brain.cfg.upstreams]
             self._json(200, {"object": "list", "data": models})
 
@@ -178,6 +228,21 @@ def make_handler(brain: Brain, log_path: Path | None):
                 resp, up, effort = brain.open(req)
             except Exception as e:
                 status = getattr(e, "status", 502)
+                brain.record(False, f"{type(e).__name__} {status}")
+                if brain.cfg.fallback_reply and (
+                    status in RETRY_STATUSES or status == 502
+                ):
+                    brain.fallback_replies += 1
+                    _write_log(
+                        log_path,
+                        {"error": type(e).__name__, "status": status, "spoken": True},
+                    )
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    write_canned(self.wfile, brain.cfg.fallback_reply)
+                    return
                 _write_log(log_path, {"error": type(e).__name__, "status": status})
                 self._json(
                     502 if status in RETRY_STATUSES or status == 502 else status,
@@ -189,6 +254,7 @@ def make_handler(brain: Brain, log_path: Path | None):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             stats = relay(resp, self.wfile, t0)
+            brain.record(stats["chars"] > 0, "prazan odgovor")
             rec = {
                 "upstream": up.name,
                 "model": up.model,
@@ -234,6 +300,26 @@ def relay(resp, out, t0: float) -> dict:
         "cached_tokens": details.get("cached_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
     }
+
+
+def write_canned(out, text: str) -> None:
+    """One OpenAI-style streamed answer with fixed text."""
+    chunk = {
+        "id": "mila-fallback",
+        "object": "chat.completion.chunk",
+        "model": "mila-fallback",
+        "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}}],
+    }
+    end = {
+        "id": "mila-fallback",
+        "object": "chat.completion.chunk",
+        "model": "mila-fallback",
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+    }
+    for obj in (chunk, end):
+        out.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
+    out.write(b"data: [DONE]\n\n")
+    out.flush()
 
 
 def _write_log(path: Path | None, rec: dict):

@@ -37,6 +37,10 @@ sim:
 
 log_dir: logs/mila_stream
 state_file: cache/mila_stream_state.json
+status_file: cache/mila_stream_status.json     # rewritten every 2 s; the supervisor reads it
+paid_ledger_file: cache/mila_paid_open.json    # paid events not yet answered
+dead_letter_file: logs/mila_dead_letters.jsonl # paid events Mila did not answer, with the reason
+olv_stuck_s: 120                               # one answer longer than this is logged as stuck
 
 # Brain connector (python -m mila_stream.brain_proxy): OLLV talks to http://127.0.0.1:8089/v1
 # (openai_compatible_llm), the connector forwards to the first working upstream.
@@ -45,6 +49,8 @@ brain:
   port: 8089
   log_file: logs/mila_brain.jsonl     # timing and token counts, never message text
   cooldown_s: 60                      # a failed upstream is skipped this long
+  # said by Mila when every upstream fails (empty = OLLV gets an error and stays silent)
+  fallback_reply: "Joj, nešto mi je zapelo u glavi. Daj mi sekundu, odmah se vraćam!"
   upstreams:
     - name: glavni
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
@@ -56,3 +62,39 @@ brain:
     #   base_url: ...
     #   model: ...
     #   key_env: ...
+
+# Supervisor (python scripts/run_mila_supervisor.py): starts the parts below in order,
+# checks each every check_every_s, restarts what fails, gives up after max_restarts in
+# restart_window_s. Status page http://127.0.0.1:8090/, OBS overlay /overlay (AI label
+# always on, "technical difficulties" banner while a critical part is down).
+# Only processes started here are ever stopped or killed.
+supervisor:
+  port: 8090
+  check_every_s: 30
+  fail_after: 2              # failed checks in a row before a restart
+  start_grace_s: 90          # failures right after a start are not counted
+  max_restarts: 5
+  restart_window_s: 600
+  log_dir: logs/supervisor   # one log per process + events.jsonl
+  overlay_label: "AI · Mila je virtualni lik kojim upravlja umjetna inteligencija"
+  difficulty_text: "Tehničke poteškoće, vraćamo se odmah"
+  difficulty_sound: ""       # optional: recorded sentence in Mila's voice (mp3/wav)
+  processes:
+    - name: mozak
+      cmd: [python, -m, mila_stream.brain_proxy, --config, mila_stream.yaml]
+      env: {PYTHONPATH: src}
+      health: {kind: brain, url: "http://127.0.0.1:8089/health"}
+    - name: olv
+      cmd: [python, run_server.py]
+      start_delay_s: 2
+      health:
+        kind: olv
+        url: "http://127.0.0.1:12393/inject-status"
+        token_env: MILA_INJECT_TOKEN
+        stuck_s: 180         # an answer running longer than this = stuck, restart
+    - name: chat
+      cmd: [python, -m, mila_stream, --config, mila_stream.yaml]
+      env: {PYTHONPATH: src}
+      start_delay_s: 20      # after OLLV has started
+      restart_on_clean_exit: false   # exit 0 = the stream's chat ended
+      health: {kind: status_file, path: cache/mila_stream_status.json, max_age_s: 30}

@@ -1,5 +1,6 @@
 import json
 import threading
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -172,3 +173,53 @@ def test_end_to_end_over_http(tmp_path):
     assert "bok" not in logf.read_text()  # no message content in the log
     srv.shutdown()
     up_srv.shutdown()
+
+
+def test_spoken_fallback_and_health_when_all_upstreams_fail(tmp_path):
+    def opener(up, body):
+        raise UpstreamError(503, "overloaded")
+
+    cfg = BrainConfig(
+        upstreams=ups("a", "b"), fallback_reply="Ups, malo zapinjem, odmah se vraćam."
+    )
+    brain = Brain(cfg, opener=opener)
+    logf = tmp_path / "brain.jsonl"
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(brain, logf))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    for _ in range(3):
+        req = urllib.request.Request(
+            f"{base}/v1/chat/completions",
+            data=json.dumps({"messages": [{"role": "user", "content": "x"}]}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        r = urllib.request.urlopen(req, timeout=5)
+        assert r.status == 200
+        text = r.read().decode("utf-8")
+        assert "odmah se vraćam" in text and "[DONE]" in text
+    h = json.loads(urllib.request.urlopen(f"{base}/health", timeout=5).read())
+    assert h["ok"] is False and h["failures_in_row"] == 3
+    assert h["fallback_replies"] == 3
+    assert all(u["cooling_s"] > 0 for u in h["upstreams"])
+    assert json.loads(logf.read_text().splitlines()[-1])["spoken"] is True
+    srv.shutdown()
+
+
+def test_without_fallback_reply_the_error_is_returned():
+    def opener(up, body):
+        raise UpstreamError(503, "overloaded")
+
+    brain = Brain(BrainConfig(upstreams=ups("a")), opener=opener)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(brain, None))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{srv.server_port}/v1/chat/completions",
+        data=b"{}",
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=5)
+    assert e.value.code == 502
+    srv.shutdown()

@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from uuid import uuid4
 import numpy as np
 from datetime import datetime
@@ -43,6 +44,8 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             raise
 
     # --- dodano (korak 6): ubacivanje poruka iz chata u istu sjednicu kao stranica s Milom ---
+    _busy_since: dict = {}
+
     def _inject_authorized(request: Request) -> bool:
         token = os.environ.get("MILA_INJECT_TOKEN", "")
         return bool(token) and request.headers.get("x-mila-token", "") == token
@@ -56,7 +59,15 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
         if uids:
             task = ws_handler.current_conversation_tasks.get(uids[-1])
             busy = bool(task is not None and not task.done())
-        return {"ok": True, "clients": len(uids), "busy": busy}
+        # how long the current answer has been running: a supervisor uses it to see a
+        # stuck conversation (voice or page never reported the end of playback)
+        now = time.monotonic()
+        if not busy:
+            _busy_since.clear()
+        elif "t" not in _busy_since:
+            _busy_since["t"] = now
+        busy_for = round(now - _busy_since["t"], 1) if busy else 0.0
+        return {"ok": True, "clients": len(uids), "busy": busy, "busy_for_s": busy_for}
 
     @router.post("/inject-text")
     async def inject_text(request: Request):

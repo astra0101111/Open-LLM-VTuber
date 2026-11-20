@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<title>Mila overlay</title>
+<!-- OBS: Browser Source, URL http://127.0.0.1:8090/overlay, 1920x1080.
+     Uključi "Control audio via OBS" ako želiš čuti rečenicu o poteškoćama. -->
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden;
+    font-family: "Segoe UI", system-ui, sans-serif; }
+  #ai { position: fixed; left: 28px; bottom: 28px; display: flex; align-items: center;
+    gap: 12px; padding: 8px 18px 8px 8px; border-radius: 999px;
+    background: rgba(18, 18, 24, 0.72); color: #fff; font-size: 22px; }
+  #ai b { display: inline-block; padding: 4px 12px; border-radius: 999px;
+    background: #fff; color: #121218; font-size: 20px; letter-spacing: 0.06em; }
+  #tp { position: fixed; left: 50%; top: 40px; transform: translateX(-50%);
+    padding: 14px 28px; border-radius: 14px; background: rgba(18, 18, 24, 0.85);
+    color: #fff; font-size: 30px; display: none; }
+</style>
+</head>
+<body>
+<div id="ai"><b>AI</b><span id="label">Mila je virtualni lik kojim upravlja umjetna inteligencija</span></div>
+<div id="tp"></div>
+<script>
+  // The AI label is always visible, also when the supervisor cannot be reached.
+  let lastIncident = 0;
+  let audio = null;
+  async function poll() {
+    try {
+      const r = await fetch("/status.json", { cache: "no-store" });
+      const s = await r.json();
+      const o = s.overlay || {};
+      if (o.label) document.getElementById("label").textContent =
+        o.label.replace(/^AI\s*[·:-]\s*/, "");
+      const tp = document.getElementById("tp");
+      if (s.difficulty) {
+        tp.textContent = o.difficulty_text || "Tehničke poteškoće";
+        tp.style.display = "block";
+        if (o.sound && s.incident !== lastIncident) {
+          lastIncident = s.incident;
+          try { audio = audio || new Audio("/overlay/zvuk"); audio.currentTime = 0; audio.play(); }
+          catch (e) {}
+        }
+      } else {
+        tp.style.display = "none";
+      }
+    } catch (e) {
+      // supervisor down: keep the label, show nothing else
+    }
+  }
+  poll();
+  setInterval(poll, 2000);
+</script>
+</body>
+</html>

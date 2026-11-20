@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<title>Mila: nadzor</title>
+<style>
+  body { font-family: "Segoe UI", system-ui, sans-serif; margin: 24px; color: #1b1b1f;
+    background: #f6f6f8; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  #banner { margin: 12px 0; padding: 10px 14px; border-radius: 8px; font-weight: 600; }
+  .ok { background: #e3f4e8; color: #17552b; }
+  .bad { background: #fbe4e4; color: #7a1b1b; }
+  .warn { background: #fdf1d8; color: #6b4a05; }
+  table { border-collapse: collapse; width: 100%; background: #fff; margin: 10px 0 20px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #e4e4ea;
+    font-size: 14px; vertical-align: top; }
+  th { background: #efeff4; font-weight: 600; }
+  .muted { color: #6a6a75; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px; margin-bottom: 20px; }
+  .tile { background: #fff; border-radius: 8px; padding: 10px 12px; }
+  .tile .v { font-size: 22px; font-weight: 600; }
+  .tile .k { font-size: 12px; color: #6a6a75; }
+</style>
+</head>
+<body>
+<h1>Mila: nadzor</h1>
+<div class="muted" id="when">čekam podatke…</div>
+<div id="banner"></div>
+<h2 style="font-size:16px">Procesi</h2>
+<table id="procs"><thead><tr><th>Dio</th><th>Stanje</th><th>Provjera</th>
+<th>Radi</th><th>Ponovnih pokretanja</th></tr></thead><tbody></tbody></table>
+<h2 style="font-size:16px">Chat</h2>
+<div class="grid" id="stream"></div>
+<p class="muted">Neodgovoreni Super Chatovi i darovi: <code>logs/mila_dead_letters.jsonl</code>.
+Događaji nadzora: <code>logs/supervisor/events.jsonl</code>. Overlay za OBS: <code>/overlay</code>.</p>
+<script>
+  const STATE = { radi: "radi", ceka: "čeka start", ponovno: "ponovno pokretanje",
+    zavrsio: "završio", odustao: "ODUSTAO (previše padova)", zaustavljen: "zaustavljen" };
+  function fmt(s) { if (s == null) return "–"; s = Math.round(s);
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + " h " : "") + (h || m ? m + " min " : "") + x + " s"; }
+  function esc(t) { return String(t ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+  function tile(k, v) { return `<div class="tile"><div class="v">${esc(v)}</div><div class="k">${esc(k)}</div></div>`; }
+  async function poll() {
+    let s;
+    try { s = await (await fetch("/status.json", { cache: "no-store" })).json(); }
+    catch (e) { document.getElementById("when").textContent = "nadzor ne odgovara"; return; }
+    document.getElementById("when").textContent = "osvježeno " + new Date(s.t * 1000).toLocaleTimeString("hr-HR");
+    const b = document.getElementById("banner");
+    if (s.reasons.length) { b.className = s.difficulty ? "bad" : "warn";
+      b.textContent = (s.difficulty ? "Na streamu se prikazuju tehničke poteškoće: " : "Problem: ") + s.reasons.join("; "); }
+    else { b.className = "ok"; b.textContent = "Sve radi."; }
+    document.querySelector("#procs tbody").innerHTML = s.processes.map(p => {
+      const c = p.check ? `${esc(p.check.detail)} <span class="muted">(${fmt(p.check.age_s)} prije)</span>` : "–";
+      const cls = p.state === "odustao" || (p.check && p.check.state === "greska") ? "bad"
+        : (p.check && p.check.state === "upozorenje") ? "warn" : "";
+      return `<tr class="${cls}"><td>${esc(p.name)}</td><td>${esc(STATE[p.state] || p.state)}</td>
+        <td>${c}</td><td>${fmt(p.uptime_s)}</td><td>${p.restarts}</td></tr>`; }).join("");
+    const st = s.stream, el = document.getElementById("stream");
+    if (!st) { el.innerHTML = tile("chat", "nema podataka"); return; }
+    const q = st.queue || {};
+    el.innerHTML = [
+      tile("izvor", st.source), tile("primljeno poruka", st.events_in),
+      tile("zadnja poruka prije", fmt(st.last_event_age_s)),
+      tile("odgovoreno", st.sent), tile("čeka: plaćeno / upućeno / chat",
+        `${q.placeno ?? 0} / ${q.upuceno ?? 0} / ${q.chat ?? 0}`),
+      tile("Mila govori", st.speaking ? "da" : "ne"),
+      tile("neodgovoreno plaćeno (otvoreno)", st.paid_open),
+      tile("neodgovoreno plaćeno (zapisano)", st.dead_letters),
+      tile("YouTube kvota potrošena", st.youtube ? st.youtube.quota_used : "–"),
+    ].join("");
+  }
+  poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>

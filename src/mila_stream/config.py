@@ -29,6 +29,12 @@ class StreamConfig:
     log_dir: str = "logs/mila_stream"
     state_file: str = "cache/mila_stream_state.json"
     tick_s: float = 0.25
+    status_file: str = "cache/mila_stream_status.json"  # read by the supervisor
+    status_every_s: float = 2.0
+    paid_ledger_file: str = "cache/mila_paid_open.json"
+    dead_letter_file: str = "logs/mila_dead_letters.jsonl"
+    olv_stuck_s: float = 120.0  # one answer running longer than this is logged as stuck
+    supervisor: dict = field(default_factory=dict)  # read by supervisor.py
     brain: dict = field(default_factory=dict)  # read by brain_proxy.py
 
 
