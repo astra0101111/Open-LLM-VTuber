@@ -49,10 +49,15 @@ class BasicMemoryAgent(AgentInterface):
         tool_manager: Optional[ToolManager] = None,
         tool_executor: Optional[ToolExecutor] = None,
         mcp_prompt_string: str = "",
+        max_history_messages: int = 0,
     ):
         """Initialize agent with LLM and configuration."""
         super().__init__()
         self._memory = []
+        # mila: how many past messages are sent to the LLM (0 = all, upstream behaviour).
+        # The whole history is still kept; only what is sent is cut. Without a cap the
+        # prompt grows for the whole stream, and with it latency and token cost.
+        self._max_history_messages = max(0, int(max_history_messages or 0))
         self._live2d_model = live2d_model
         self._tts_preprocessor_config = tts_preprocessor_config
         self._faster_first_response = faster_first_response
@@ -239,9 +244,19 @@ class BasicMemoryAgent(AgentInterface):
 
         return "\n".join(message_parts).strip()
 
+    def _history_window(self) -> List[Dict[str, Any]]:
+        """Past messages to send: the last max_history_messages, starting at a user turn."""
+        messages = self._memory.copy()
+        limit = self._max_history_messages
+        if limit and len(messages) > limit:
+            messages = messages[-limit:]
+            while messages and messages[0].get("role") != "user":
+                messages = messages[1:]
+        return messages
+
     def _to_messages(self, input_data: BatchInput) -> List[Dict[str, Any]]:
         """Prepare messages for LLM API call."""
-        messages = self._memory.copy()
+        messages = self._history_window()
         user_content = []
         text_prompt = self._to_text_prompt(input_data)
         if text_prompt:

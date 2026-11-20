@@ -62,6 +62,8 @@ character_config:
         llm_provider: 'ollama_llm' # 使用的 LLM 提供商
         # 是否在第一句回应时遇上逗号就直接生成音频以减少首句延迟（默认：True）
         faster_first_response: True
+        # 每轮发送给大语言模型的历史消息数量（0 = 全部）。长时间直播建议设为 20 左右。
+        max_history_messages: 0
         # 句子分割方法：'regex' 或 'pysbd'
         segment_method: 'pysbd'
         # 是否使用 MCP（Model Context Protocol） Plus 以使 LLM 获得使用工具的能力（默认：False）

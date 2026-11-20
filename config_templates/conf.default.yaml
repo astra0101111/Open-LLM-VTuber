@@ -62,6 +62,9 @@ character_config:
         # let ai speak as soon as the first comma is received on the first sentence
         # to reduced latency.
         faster_first_response: True
+        # How many past messages go to the LLM each turn (0 = all). For a long stream
+        # set e.g. 20: the prompt then stops growing, so latency and cost stay flat.
+        max_history_messages: 0
         # Method for segmenting sentences: 'regex' or 'pysbd'
         segment_method: 'pysbd'
         # Use MCP (Model Context Protocol) Plus to let the LLM have the ability to use tools
