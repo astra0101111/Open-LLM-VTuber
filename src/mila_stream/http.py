@@ -27,13 +27,30 @@ class HttpClient(Protocol):
     async def aclose(self) -> None: ...
 
 
+def system_ssl_context():
+    """Certificates from the operating system's store when truststore is installed.
+
+    On Oero's PC Google's HTTPS works only with the Windows store (the demo's Gemini
+    connector needed truststore for the same reason). Verification stays on; only the
+    list of trusted roots changes. Returns True (httpx default: certifi) otherwise.
+    """
+    try:
+        import ssl
+
+        import truststore
+
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        return True
+
+
 class HttpxClient:
     """HttpClient on top of httpx.AsyncClient."""
 
     def __init__(self, timeout: float = 20.0):
         import httpx  # imported here so tests do not need httpx
 
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout, verify=system_ssl_context())
 
     async def get(self, url, params, headers=None):
         r = await self._client.get(url, params=params, headers=headers)

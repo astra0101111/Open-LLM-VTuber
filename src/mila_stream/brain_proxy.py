@@ -332,6 +332,12 @@ def _write_log(path: Path | None, rec: dict):
 
 
 def main(argv=None) -> int:
+    try:  # Windows certificate store, as in the demo's Gemini connector; checks stay on
+        import truststore
+
+        truststore.inject_into_ssl()
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(prog="mila_stream.brain_proxy")
     ap.add_argument("--config", default="mila_stream.yaml")
     a = ap.parse_args(argv)
