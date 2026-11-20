@@ -8,6 +8,14 @@ from ..utils.sentence_divider import SentenceDivider
 from ..utils.sentence_divider import SentenceWithTags, TagState
 from loguru import logger
 
+try:  # mila: output filter shared with the stream layer (src/mila_stream)
+    from src.mila_stream import output_guard as _output_guard
+except ImportError:  # pragma: no cover - run from another working directory
+    try:
+        from mila_stream import output_guard as _output_guard
+    except ImportError:
+        _output_guard = None
+
 
 def sentence_divider(
     faster_first_response: bool = True,
@@ -191,6 +199,17 @@ def tts_filter(
                     if any(tag.name == "think" for tag in sentence.tags):
                         tts = ""
                     else:
+                        if _output_guard is not None and _output_guard.enabled():
+                            g = _output_guard.guard(display.text)
+                            if g.reason:
+                                logger.warning(
+                                    f"[mila output guard] {g.reason}: {display.text!r}"
+                                )
+                                display = DisplayText(
+                                    text=g.display,
+                                    name=display.name,
+                                    avatar=display.avatar,
+                                )
                         tts = filter_text(
                             text=display.text,
                             remove_special_char=config.remove_special_char,
