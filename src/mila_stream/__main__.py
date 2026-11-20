@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import logging
+import sys
 
 from .config import load_config
 from .runner import run
@@ -21,6 +22,11 @@ def main(argv=None) -> int:
         "--dry-run", action="store_true", help="print what Mila would get; send nothing"
     )
     args = ap.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):
+        try:  # Windows console code pages cannot print every Croatian letter
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )

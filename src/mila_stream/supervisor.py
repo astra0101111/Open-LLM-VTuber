@@ -199,6 +199,9 @@ class Managed:
     def start(self, now: float) -> None:
         env = {**os.environ, **{k: str(v) for k, v in self.spec.env.items()}}
         env.setdefault("PYTHONUNBUFFERED", "1")
+        # child output goes to a log file; on Windows the default code page cannot
+        # write č, ć or đ and the child would crash on its first Croatian line
+        env.setdefault("PYTHONIOENCODING", "utf-8")
         self._log_fh = self._open_log()
         kw = {}
         if WINDOWS:
