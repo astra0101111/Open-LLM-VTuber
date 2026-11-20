@@ -1,0 +1,39 @@
+# Mila stream layer. Copy to mila_stream.yaml (ignored by git) and edit.
+# Secrets are NOT written here: set the environment variables named below.
+
+platform: youtube            # youtube | sim
+
+youtube:
+  video_id: ""               # ID of the live video (the part after watch?v=)
+  channel_id: ""             # or the channel ID: the live video is found by search (1 of 100 daily searches)
+  api_key_env: MILA_YOUTUBE_API_KEY
+  transport: auto            # auto (stream if gRPC stubs exist, else poll) | stream | poll
+  daily_quota: 10000         # YouTube default per Google Cloud project
+  quota_reserve: 1000        # never spend this part
+  planned_hours: 4           # polling is paced so this many hours fit in the quota
+  skip_history: true         # on first connect, do not answer messages older than start
+
+olv:
+  base_url: http://127.0.0.1:12393
+  token_env: MILA_INJECT_TOKEN
+
+queue:
+  names: [mila]              # a message with this name goes to the "addressed" lane
+  ttl_paid_s: 180            # Super Chat, members, gifts wait at most this long
+  ttl_addressed_s: 45        # questions and messages to Mila
+  ttl_chat_s: 25             # everything else
+  min_gap_s: 0               # pause after each answer (not for gifts)
+  max_per_minute: 6          # answers per minute (not for gifts)
+  answered_memory_s: 600     # same author / same text gets lower priority for this long
+
+filter:
+  block_minutes: 10          # viewer ignored after hate speech or a prompt-injection attempt
+  max_len: 220
+
+sim:
+  messages_per_minute: 30
+  minutes: 30
+  seed: 7
+
+log_dir: logs/mila_stream
+state_file: cache/mila_stream_state.json

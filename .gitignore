@@ -76,3 +76,6 @@ private/
 mcp_servers.json
 
 .vscode/
+# Mila stream layer
+mila_stream.yaml
+src/mila_stream/proto/stream_list_pb2*.py
