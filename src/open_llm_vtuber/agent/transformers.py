@@ -100,7 +100,7 @@ def actions_extractor(live2d_model: Live2dModel):
     return decorator
 
 
-def display_processor():
+def display_processor(live2d_model=None):
     """
     Decorator that processes text for display, passing through dicts.
     """
@@ -139,6 +139,8 @@ def display_processor():
                             elif tag.state == TagState.END:
                                 text = ")"
 
+                    if live2d_model is not None:  # dodano: oznake raspolozenja ne idu u titl
+                        text = live2d_model.remove_emotion_keywords(text).lstrip()
                     display = DisplayText(text=text)  # Simplified DisplayText creation
                     yield sentence, display, actions  # Yield the tuple
                 elif isinstance(item, dict):

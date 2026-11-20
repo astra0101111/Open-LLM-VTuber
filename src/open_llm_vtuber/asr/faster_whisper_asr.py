@@ -33,6 +33,7 @@ class VoiceRecognition(ASRInterface):
                 beam_size=5 if self.BEAM_SEARCH else 1,
                 language=self.LANG if self.LANG else None,
                 condition_on_previous_text=False,
+                vad_filter=True,  # dodano: Silero VAD sprjecava halucinacije na tisini
                 initial_prompt=self.prompt,
             )
         else:
@@ -41,6 +42,7 @@ class VoiceRecognition(ASRInterface):
                 beam_size=5 if self.BEAM_SEARCH else 1,
                 language=self.LANG if self.LANG else None,
                 condition_on_previous_text=False,
+                vad_filter=True,  # dodano: Silero VAD sprjecava halucinacije na tisini
             )
         text = [segment.text for segment in segments]
 

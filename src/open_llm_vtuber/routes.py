@@ -3,7 +3,7 @@ import json
 from uuid import uuid4
 import numpy as np
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, UploadFile, File, Response
+from fastapi import APIRouter, WebSocket, UploadFile, File, Response, Request
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 from loguru import logger
@@ -41,6 +41,42 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             logger.error(f"Error in WebSocket connection: {e}")
             await ws_handler.handle_disconnect(client_uid)
             raise
+
+    # --- dodano (korak 6): ubacivanje poruka iz chata u istu sjednicu kao stranica s Milom ---
+    def _inject_authorized(request: Request) -> bool:
+        token = os.environ.get("MILA_INJECT_TOKEN", "")
+        return bool(token) and request.headers.get("x-mila-token", "") == token
+
+    @router.get("/inject-status")
+    async def inject_status(request: Request):
+        if not _inject_authorized(request):
+            return JSONResponse({"ok": False, "error": "nema dopustenja"}, status_code=403)
+        uids = list(ws_handler.client_connections.keys())
+        busy = False
+        if uids:
+            task = ws_handler.current_conversation_tasks.get(uids[-1])
+            busy = bool(task is not None and not task.done())
+        return {"ok": True, "clients": len(uids), "busy": busy}
+
+    @router.post("/inject-text")
+    async def inject_text(request: Request):
+        if not _inject_authorized(request):
+            return JSONResponse({"ok": False, "error": "nema dopustenja"}, status_code=403)
+        body = await request.json()
+        text = str((body or {}).get("text", "")).strip()
+        if not text:
+            return JSONResponse({"ok": False, "error": "prazan tekst"}, status_code=400)
+        uids = list(ws_handler.client_connections.keys())
+        if not uids:
+            return JSONResponse({"ok": False, "error": "nema spojene stranice"}, status_code=409)
+        uid = uids[-1]  # zadnja spojena stranica s Milom
+        task = ws_handler.current_conversation_tasks.get(uid)
+        if task is not None and not task.done():
+            return JSONResponse({"ok": False, "error": "Mila jos govori"}, status_code=429)
+        await ws_handler._handle_conversation_trigger(
+            ws_handler.client_connections[uid], uid, {"type": "text-input", "text": text}
+        )
+        return {"ok": True}
 
     return router
 
