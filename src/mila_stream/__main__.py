@@ -9,6 +9,7 @@ import logging
 import sys
 
 from .config import load_config
+from .http import quiet_http_loggers
 from .runner import run
 
 
@@ -30,6 +31,7 @@ def main(argv=None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
+    quiet_http_loggers()
     cfg = load_config(args.config)
     if args.sim:
         cfg.platform = "sim"

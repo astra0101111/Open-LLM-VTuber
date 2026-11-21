@@ -69,3 +69,13 @@ def _json_or_none(r):
         return r.json()
     except Exception:
         return None
+
+
+def quiet_http_loggers() -> None:
+    """httpx logs every request URL at INFO. The YouTube API key travels in the URL,
+    so at INFO it would land in the chat log (found in the 2026-11-21 live test).
+    Keep httpx and httpcore at WARNING."""
+    import logging
+
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
