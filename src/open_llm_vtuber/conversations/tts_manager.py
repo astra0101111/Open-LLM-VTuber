@@ -89,6 +89,27 @@ class TTSTaskManager:
         )
         self.task_list.append(task)
 
+    async def wait_until_sent(self, timeout: float = 120.0) -> None:
+        """
+        Wait until every queued TTS task has finished AND its payload has been
+        written to the websocket.
+
+        Sending ``backend-synth-complete`` while the sender task is still writing
+        large audio payloads makes two coroutines write to the same websocket at
+        once; the legacy websockets protocol then fails with
+        ``AssertionError`` in ``_drain_helper``. Fast TTS backends (cloud TTS that
+        returns whole sentences in ~1 s) hit this on every turn.
+        """
+        if self.task_list:
+            await asyncio.gather(*self.task_list)
+        if self._sender_task and not self._sender_task.done():
+            try:
+                await asyncio.wait_for(self._payload_queue.join(), timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"TTS payloads still unsent after {timeout}s; continuing anyway"
+                )
+
     async def _process_payload_queue(self, websocket_send: WebSocketSend) -> None:
         """
         Process and send payloads in correct order.
